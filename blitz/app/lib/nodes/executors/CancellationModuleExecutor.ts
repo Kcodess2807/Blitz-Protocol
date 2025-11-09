@@ -1,27 +1,18 @@
 import { ExecutionContext } from '../types/execution';
+import { getOrderById } from '@/app/lib/mock-data/orders';
 
 export interface CancellationExecutionResult {
   method: 'MODULE_TO_FRONTEND';
   cancellationResult: {
+    success: boolean;
+    message: string;
     orderId: string;
-    canCancel: boolean;
-    reason: string;
     refundAmount?: number;
     refundMethod?: string;
-    processingTime?: string;
-    cancellationId?: string;
-    message: string;
+    refundTimeline?: string;
+    reason?: string;
   };
 }
-
-// Order status database
-const ORDER_STATUS_DB: Record<string, { status: string; amount: number; canCancel: boolean }> = {
-  'ORD-12345': { status: 'In Transit', amount: 2499, canCancel: false },
-  'ORD-67890': { status: 'Delivered', amount: 1299, canCancel: false },
-  'ORD-11111': { status: 'Processing', amount: 3999, canCancel: true },
-  'ORD-22222': { status: 'Payment Pending', amount: 899, canCancel: true },
-  'ORD-33333': { status: 'Confirmed', amount: 5499, canCancel: true },
-};
 
 export class CancellationModuleExecutor {
   async execute(
@@ -34,40 +25,96 @@ export class CancellationModuleExecutor {
     // Extract order ID
     const cleanOrderId = this.extractOrderId(orderId);
 
-    // Get order status from database
-    const orderInfo = ORDER_STATUS_DB[cleanOrderId] || {
-      status: 'Processing',
-      amount: 1999,
-      canCancel: true,
-    };
+    // Get order from database
+    const order = getOrderById(cleanOrderId);
 
-    // Check if cancellation is allowed
-    if (!orderInfo.canCancel) {
+    if (!order) {
       return {
         method: 'MODULE_TO_FRONTEND',
         cancellationResult: {
+          success: false,
+          message: `Order ${cleanOrderId} not found in our system. Please verify the order ID.`,
           orderId: cleanOrderId,
-          canCancel: false,
-          reason: this.getCancellationDenialReason(orderInfo.status),
-          message: `Sorry, order ${cleanOrderId} cannot be cancelled as it is already ${orderInfo.status.toLowerCase()}.`,
         },
       };
     }
 
-    // Process cancellation
-    const cancellationId = `CAN-${Date.now().toString().slice(-6)}`;
+    // Business Rule 1: Check if order is already cancelled or delivered
+    if (order.status === 'cancelled') {
+      return {
+        method: 'MODULE_TO_FRONTEND',
+        cancellationResult: {
+          success: false,
+          message: `Order ${cleanOrderId} is already cancelled. No further action needed.`,
+          orderId: cleanOrderId,
+        },
+      };
+    }
 
+    if (order.status === 'delivered') {
+      return {
+        method: 'MODULE_TO_FRONTEND',
+        cancellationResult: {
+          success: false,
+          message: `Order ${cleanOrderId} has already been delivered. Please initiate a return request instead of cancellation.`,
+          orderId: cleanOrderId,
+        },
+      };
+    }
+
+    // Business Rule 2: Cannot cancel if in transit or shipped
+    if (order.status === 'in_transit' || order.status === 'shipped') {
+      return {
+        method: 'MODULE_TO_FRONTEND',
+        cancellationResult: {
+          success: false,
+          message: `Order ${cleanOrderId} is currently ${order.status.replace('_', ' ')} and cannot be cancelled. The shipment is already on its way. You may refuse delivery or initiate a return after receiving the product.`,
+          orderId: cleanOrderId,
+        },
+      };
+    }
+
+    // Business Rule 3: Check if order is older than 7 days
+    const orderDate = new Date(order.orderDate);
+    const today = new Date();
+    const daysDifference = Math.floor((today.getTime() - orderDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysDifference > 7) {
+      return {
+        method: 'MODULE_TO_FRONTEND',
+        cancellationResult: {
+          success: false,
+          message: `Order ${cleanOrderId} was placed more than 7 days ago (${daysDifference} days) and cannot be cancelled. Please contact customer support for assistance.`,
+          orderId: cleanOrderId,
+        },
+      };
+    }
+
+    // Business Rule 4: Can only cancel pending or processing orders
+    if (order.status === 'pending' || order.status === 'processing') {
+      console.log('[CancellationModuleExecutor] Cancellation approved:', cleanOrderId);
+      
+      return {
+        method: 'MODULE_TO_FRONTEND',
+        cancellationResult: {
+          success: true,
+          message: `Order ${cleanOrderId} has been successfully cancelled. Your refund of ₹${order.price.toLocaleString('en-IN')} will be processed within 5-7 business days.`,
+          orderId: cleanOrderId,
+          refundAmount: order.price,
+          refundMethod: 'Original payment method',
+          refundTimeline: '5-7 business days',
+          reason: reason || 'Customer request',
+        },
+      };
+    }
+
+    // Fallback
     return {
       method: 'MODULE_TO_FRONTEND',
       cancellationResult: {
+        success: false,
+        message: `Order ${cleanOrderId} cannot be cancelled at this time. Current status: ${order.status}. Please contact customer support.`,
         orderId: cleanOrderId,
-        canCancel: true,
-        reason: reason || 'Customer request',
-        refundAmount: orderInfo.amount,
-        refundMethod: 'Original Payment Method',
-        processingTime: '3-5 business days',
-        cancellationId,
-        message: `Order ${cleanOrderId} has been successfully cancelled. Refund of ₹${orderInfo.amount} will be processed within 3-5 business days.`,
       },
     };
   }
@@ -77,16 +124,6 @@ export class CancellationModuleExecutor {
     if (match) {
       return match[0].toUpperCase();
     }
-    return 'ORD-11111';
-  }
-
-  private getCancellationDenialReason(status: string): string {
-    const reasons: Record<string, string> = {
-      'In Transit': 'Order is already shipped and in transit',
-      'Delivered': 'Order has already been delivered',
-      'Out for Delivery': 'Order is out for delivery',
-      'Shipped': 'Order has already been shipped',
-    };
-    return reasons[status] || 'Order cannot be cancelled at this stage';
+    return input.toUpperCase();
   }
 }

@@ -26,6 +26,15 @@ export async function getWorkflowGenAINode(businessId: string): Promise<Workflow
   // Load workflow with configurations
   const { nodes, edges } = await loadWorkflowWithConfigurations(workflow.id);
 
+  // Log for debugging
+  console.log('[workflow-loader] Loaded workflow:', {
+    workflowId: workflow.id,
+    nodesCount: nodes.length,
+    edgesCount: edges.length,
+    nodes: nodes.map(n => ({ id: n.id, type: n.type, moduleType: n.data?.moduleType })),
+    edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target })),
+  });
+
   // Find the GenAI node
   const genAINode = nodes.find((node) => node.type === 'genai-intent') || null;
 
@@ -55,19 +64,15 @@ export async function getWorkflowGenAINode(businessId: string): Promise<Workflow
   }
 
   // Test the API key to ensure it actually works
-  // Note: This is async validation, so we test it here
-  // If the API key is invalid, we should mark the node as not configured
   try {
     const apiKeyTest = await testAPIKey(genAINode.genAIConfig);
     if (!apiKeyTest.valid) {
       // API key is invalid - mark node as not configured in database
-      // Import here to avoid circular dependencies
       const { saveNodeConfiguration, loadNodeConfigurations } = await import('@/app/lib/db/node-configurations');
       const configurations = await loadNodeConfigurations(workflow.id);
       const nodeConfig = configurations[genAINode.id];
       
       if (nodeConfig) {
-        // Update to mark as not configured
         await saveNodeConfiguration(
           workflow.id,
           genAINode.id,
@@ -80,19 +85,24 @@ export async function getWorkflowGenAINode(businessId: string): Promise<Workflow
       throw new Error(apiKeyTest.error || 'API key is invalid or not working. Please update your API key in the workflow builder.');
     }
   } catch (error) {
-    // If testAPIKey throws an error, check if it's our validation error
     if (error instanceof Error && error.message.includes('API key')) {
       throw error;
     }
-    // Re-throw other errors
     throw new Error(`Failed to validate API key: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+
+  // Ensure edges array is properly formatted
+  const formattedEdges = edges.map(edge => ({
+    id: edge.id || `${edge.source}-${edge.target}`,
+    source: edge.source,
+    target: edge.target,
+  }));
 
   return {
     workflow,
     genAINode,
     nodes,
-    edges,
+    edges: formattedEdges,
   };
 }
 
@@ -106,9 +116,5 @@ export async function listBusinessesWithWorkflows(): Promise<Array<{
   hasWorkflow: boolean;
   hasGenAINode: boolean;
 }>> {
-  // This will need to query all businesses
-  // For now, we'll create an API route for this
-  // This is a placeholder function
   return [];
 }
-

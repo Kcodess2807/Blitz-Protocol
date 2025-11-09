@@ -128,6 +128,13 @@ export async function POST(request: Request) {
       
       // Use WorkflowOrchestrator to execute the workflow
       // This will check for connected RAG modules and execute them first
+      console.log('[Chat API] About to call WorkflowOrchestrator with:', {
+        nodesCount: workflowGenAI.nodes.length,
+        edgesCount: workflowGenAI.edges.length,
+        nodes: workflowGenAI.nodes.map(n => ({ id: n.id, type: n.type, moduleType: n.data?.moduleType })),
+        edges: workflowGenAI.edges,
+      });
+      
       const { WorkflowOrchestrator } = await import('@/app/lib/nodes/executors/WorkflowOrchestrator');
       executionResult = await WorkflowOrchestrator.executeWorkflow(
         message,
@@ -136,6 +143,11 @@ export async function POST(request: Request) {
         workflowGenAI.edges,
         executionContext
       );
+      
+      console.log('[Chat API] WorkflowOrchestrator returned:', {
+        hasRAGContext: !!executionResult.ragContext,
+        ragContext: executionResult.ragContext,
+      });
     } catch (error) {
       console.error('[Chat API] GenAI execution error:', error);
       

@@ -182,6 +182,16 @@ export async function loadWorkflowWithConfigurations(
     edges: WorkflowEdge[];
   } | null;
 
+  console.log('[loadWorkflowWithConfigurations] Loading workflow:', {
+    workflowId,
+    businessId: workflow.business_id,
+    hasReactFlowState: !!reactFlowState,
+    nodesCount: reactFlowState?.nodes?.length || 0,
+    edgesCount: reactFlowState?.edges?.length || 0,
+    hasRAGModule: reactFlowState?.nodes?.some((n: any) => n.type === 'module' && n.data?.moduleType === 'rag') || false,
+    edges: reactFlowState?.edges || [],
+  });
+
   if (!reactFlowState) {
     return {
       workflow: workflow as WorkflowRecord,

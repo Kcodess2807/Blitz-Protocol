@@ -28,21 +28,24 @@ export class WorkflowOrchestrator {
     message: string,
     genAINode: WorkflowNodeWithConfig,
     allNodes: WorkflowNodeWithConfig[],
-    edges: Array<{ source: string; target: string }>,
+    edges: Array<{ source: string; target: string }> | undefined | null,
     context: ExecutionContext
   ): Promise<WorkflowExecutionResult> {
     console.log('[WorkflowOrchestrator] Starting workflow execution');
+    
+    // Ensure edges is always an array
+    const validEdges = edges || [];
 
     // Step 1: Check if GenAI node is connected to a RAG module
     // SMART FALLBACK: If no edges, find ANY configured RAG module
-    let connectedRAGNode = this.findConnectedRAGModule(genAINode.id, allNodes, edges);
+    let connectedRAGNode = this.findConnectedRAGModule(genAINode.id, allNodes, validEdges);
     
     // Fallback: If no connection found via edges, look for any configured RAG module
     if (!connectedRAGNode) {
       console.log('[WorkflowOrchestrator] No edge connection found, searching for any RAG module...');
       connectedRAGNode = allNodes.find(node => 
         node.type === 'module' && 
-        node.data.moduleType === 'rag' && 
+        node.data?.moduleType === 'rag' && 
         node.isConfigured
       ) || null;
       
@@ -54,12 +57,12 @@ export class WorkflowOrchestrator {
     console.log('[WorkflowOrchestrator] Connection check:', {
       genAINodeId: genAINode.id,
       totalNodes: allNodes.length,
-      totalEdges: edges?.length || 0,
-      edges: edges,
+      totalEdges: validEdges.length,
+      edges: validEdges,
       allNodeTypes: allNodes.map(n => ({ id: n.id, type: n.type, moduleType: n.data?.moduleType, isConfigured: n.isConfigured })),
       foundRAGNode: !!connectedRAGNode,
       ragNodeId: connectedRAGNode?.id,
-      usedFallback: !edges || edges.length === 0,
+      usedFallback: validEdges.length === 0,
     });
 
     let ragContext: WorkflowExecutionResult['ragContext'];
@@ -136,7 +139,7 @@ export class WorkflowOrchestrator {
         genAIResult.intent,
         genAIResult.extractedData || {},
         allNodes,
-        edges,
+        validEdges,
         context
       );
 
@@ -171,7 +174,7 @@ export class WorkflowOrchestrator {
    * Executes the appropriate module based on detected intent
    */
   private static async executeModuleForIntent(
-    intent: 'cancellation' | 'order_query' | 'refund_query',
+    intent: 'cancellation' | 'order_query' | 'refund_query' | 'service_enquiry',
     extractedData: Record<string, unknown>,
     allNodes: WorkflowNodeWithConfig[],
     edges: Array<{ source: string; target: string }>,
@@ -186,11 +189,18 @@ export class WorkflowOrchestrator {
         const orderId = (extractedData.orderId as string) || 'ORD-12345';
         const result = await executor.execute(orderId, context);
         
-        return {
-          response: this.formatTrackingResponse(result.trackingInfo),
-          method: result.method,
-          data: result.trackingInfo,
-        };
+        if (result.trackingInfo) {
+          return {
+            response: this.formatTrackingResponse(result.trackingInfo),
+            method: result.method,
+            data: result.trackingInfo,
+          };
+        } else {
+          return {
+            response: result.error || 'Order not found',
+            method: result.method,
+          };
+        }
       }
 
       if (intent === 'cancellation') {
@@ -221,6 +231,21 @@ export class WorkflowOrchestrator {
         };
       }
 
+      if (intent === 'service_enquiry') {
+        // Execute service enquiry module
+        const { ServiceEnquiryModuleExecutor } = await import('./ServiceEnquiryModuleExecutor');
+        const executor = new ServiceEnquiryModuleExecutor();
+        const enquiryType = (extractedData.enquiryType as string) || 'general';
+        const description = (extractedData.description as string) || 'Customer enquiry';
+        const result = await executor.execute(enquiryType, description, context);
+        
+        return {
+          response: result.enquiryResult.message,
+          method: result.method,
+          data: result.enquiryResult,
+        };
+      }
+
       return null;
     } catch (error) {
       console.error('[WorkflowOrchestrator] Module execution failed:', error);
@@ -232,19 +257,23 @@ export class WorkflowOrchestrator {
    * Formats tracking information into a readable response
    */
   private static formatTrackingResponse(trackingInfo: any): string {
-    const { orderId, status, currentLocation, estimatedDelivery, trackingNumber, carrier } = trackingInfo;
+    const { orderId, status, currentLocation, estimatedDelivery, trackingNumber, carrier, customerName, productName } = trackingInfo;
     
-    return `📦 Order Tracking - ${orderId}
+    return `📦 **Order Tracking - ${orderId}**
 
-Status: ${status}
-Current Location: ${currentLocation}
-Estimated Delivery: ${estimatedDelivery}
+**Customer:** ${customerName}
+**Product:** ${productName}
 
-Tracking Number: ${trackingNumber}
-Carrier: ${carrier}
+**Current Status:** ${status}
+**Location:** ${currentLocation}
+**Estimated Delivery:** ${estimatedDelivery}
 
-Latest Updates:
-${trackingInfo.milestones.slice(-2).map((m: any) => `• ${m.date} - ${m.status} (${m.location})`).join('\n')}`;
+**Tracking Details:**
+• Tracking Number: ${trackingNumber}
+• Carrier: ${carrier}
+
+**Recent Updates:**
+${trackingInfo.milestones.slice(-3).map((m: any) => `• ${m.date} ${m.time} - ${m.status} (${m.location})`).join('\n')}`;
   }
 
   /**
@@ -253,19 +282,42 @@ ${trackingInfo.milestones.slice(-2).map((m: any) => `• ${m.date} - ${m.status}
   private static findConnectedRAGModule(
     nodeId: string,
     allNodes: WorkflowNodeWithConfig[],
-    edges: Array<{ source: string; target: string }>
+    edges: Array<{ source: string; target: string }> | undefined | null
   ): WorkflowNodeWithConfig | null {
+    // Safety check: if no edges, return null
+    if (!edges || edges.length === 0) {
+      console.log('[WorkflowOrchestrator] No edges provided to findConnectedRAGModule');
+      return null;
+    }
+
+    console.log('[WorkflowOrchestrator] Searching for RAG connection:', {
+      searchingFromNode: nodeId,
+      availableEdges: edges,
+      availableNodes: allNodes.map(n => ({ id: n.id, type: n.type, moduleType: n.data?.moduleType })),
+    });
+
     // Find edges where the source is the given node
     const outgoingEdges = edges.filter(edge => edge.source === nodeId);
+    
+    console.log('[WorkflowOrchestrator] Found outgoing edges:', outgoingEdges);
 
     // Find RAG modules among the connected nodes
     for (const edge of outgoingEdges) {
       const targetNode = allNodes.find(node => node.id === edge.target);
-      if (targetNode && targetNode.type === 'module' && targetNode.data.moduleType === 'rag') {
+      console.log('[WorkflowOrchestrator] Checking target node:', {
+        edgeTarget: edge.target,
+        foundNode: !!targetNode,
+        nodeType: targetNode?.type,
+        moduleType: targetNode?.data?.moduleType,
+      });
+      
+      if (targetNode && targetNode.type === 'module' && targetNode.data?.moduleType === 'rag') {
+        console.log('[WorkflowOrchestrator] Found RAG module via edge!', targetNode.id);
         return targetNode;
       }
     }
 
+    console.log('[WorkflowOrchestrator] No RAG module found via edges');
     return null;
   }
 }

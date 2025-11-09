@@ -226,6 +226,30 @@ export default function Home() {
     }
   };
 
+  const handleDebugWorkflow = async () => {
+    if (!selectedBusinessId) {
+      alert('Please select a business first');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/debug/workflow?businessId=${encodeURIComponent(selectedBusinessId)}`);
+      const data = await response.json();
+      
+      console.log('=== WORKFLOW DEBUG INFO ===');
+      console.log('Full Response:', data);
+      console.log('RAG Modules:', data.ragModules);
+      console.log('Edges:', data.edges);
+      console.log('Diagnosis:', data.diagnosis);
+      console.log('========================');
+      
+      alert(`Debug info logged to console. Check browser console (F12).\n\nQuick Summary:\n- RAG Modules: ${data.ragModules?.count || 0}\n- Configured: ${data.diagnosis?.hasConfiguredRAG ? 'Yes' : 'No'}\n- Connected: ${data.diagnosis?.hasRAGConnection ? 'Yes' : 'No'}\n- Ready: ${data.diagnosis?.readyForRAG ? 'Yes ✓' : 'No ✗'}`);
+    } catch (error) {
+      console.error('Debug error:', error);
+      alert('Failed to get debug info. Check console.');
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -267,6 +291,14 @@ export default function Home() {
               title={!selectedBusinessId ? 'Please select a business first' : 'Test if the selected business workflow has a configured GenAI node'}
             >
               {testStatus?.status === 'testing' ? 'Testing...' : 'Test API'}
+            </button>
+            <button
+              onClick={handleDebugWorkflow}
+              disabled={!selectedBusinessId}
+              className="rounded-md border border-orange-300 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 transition hover:bg-orange-100 disabled:opacity-50"
+              title="Debug workflow configuration and RAG connections"
+            >
+              🔍 Debug RAG
             </button>
           </div>
         </div>

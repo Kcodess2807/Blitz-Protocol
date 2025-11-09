@@ -287,26 +287,55 @@ export function WorkflowCanvas({
   }, [nodes]);
 
   const handleAddModule = useCallback(
-    (moduleType: ModuleType) => {
-      setNodes((current) => {
-        const id = `module-${moduleType}`;
-        if (current.some((node) => node.id === id)) {
-          return current;
-        }
+    async (moduleType: ModuleType) => {
+      const id = `module-${moduleType}`;
+      
+      // Check if node already exists
+      if (nodes.some((node) => node.id === id)) {
+        return;
+      }
 
-        const newNode: Node = {
-          id,
-          type: 'module',
-          position: DEFAULT_MODULE_POSITIONS[moduleType] || { x: 400, y: 200 },
-          data: {
-            moduleType, // Only basic info, no configs
-          },
-        };
+      const newNode: Node = {
+        id,
+        type: 'module',
+        position: DEFAULT_MODULE_POSITIONS[moduleType] || { x: 400, y: 200 },
+        data: {
+          moduleType, // Only basic info, no configs
+        },
+      };
 
-        return [...current, newNode];
-      });
+      // Update local state
+      setNodes((current) => [...current, newNode]);
+
+      // Save to database immediately
+      try {
+        const updatedNodes = [...nodes, newNode];
+        await fetch('/api/workflows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workflowId,
+            nodes: updatedNodes.map((n) => ({
+              id: n.id,
+              type: n.type,
+              position: n.position,
+              data: n.data,
+            })),
+            edges: edges.map((e) => ({
+              id: e.id,
+              source: e.source,
+              target: e.target,
+              sourceHandle: e.sourceHandle,
+              targetHandle: e.targetHandle,
+            })),
+          }),
+        });
+        console.log('[WorkflowCanvas] Module node saved to database:', id);
+      } catch (error) {
+        console.error('[WorkflowCanvas] Failed to save module node:', error);
+      }
     },
-    [setNodes]
+    [nodes, edges, setNodes, workflowId]
   );
 
   const handleDeleteModule = useCallback(
@@ -330,11 +359,41 @@ export function WorkflowCanvas({
       });
 
       // Remove from React Flow
-      setNodes((current) => current.filter((node) => node.id !== nodeId));
-      setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+      const updatedNodes = nodes.filter((node) => node.id !== nodeId);
+      const updatedEdges = edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
+      
+      setNodes(updatedNodes);
+      setEdges(updatedEdges);
       setSelectedNode(null);
+
+      // Save to database
+      try {
+        await fetch('/api/workflows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workflowId,
+            nodes: updatedNodes.map((n) => ({
+              id: n.id,
+              type: n.type,
+              position: n.position,
+              data: n.data,
+            })),
+            edges: updatedEdges.map((e) => ({
+              id: e.id,
+              source: e.source,
+              target: e.target,
+              sourceHandle: e.sourceHandle,
+              targetHandle: e.targetHandle,
+            })),
+          }),
+        });
+        console.log('[WorkflowCanvas] Node deletion saved to database');
+      } catch (error) {
+        console.error('[WorkflowCanvas] Failed to save after deletion:', error);
+      }
     },
-    [setEdges, setNodes, workflowId]
+    [nodes, edges, setEdges, setNodes, workflowId]
   );
 
   const protectedCoreIds = useMemo(() => new Set(CORE_NODES.filter((node) => node.type !== 'response').map((node) => node.id)), []);
@@ -392,38 +451,122 @@ export function WorkflowCanvas({
   );
 
   const onConnect = useCallback(
-    (connection: Connection) => {
+    async (connection: Connection) => {
       const sourceNode = nodes.find((node) => node.id === connection.source);
       const targetNode = nodes.find((node) => node.id === connection.target);
       if (!sourceNode || !targetNode) return;
       if (!isAllowedConnection(sourceNode.type, targetNode.type)) return;
 
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...connection,
-            id: `${connection.source}-${connection.target}-${Date.now()}`,
-            markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-          },
-          eds
-        )
-      );
+      const newEdge = {
+        ...connection,
+        id: `${connection.source}-${connection.target}-${Date.now()}`,
+        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+      };
+
+      setEdges((eds) => addEdge(newEdge, eds));
+
+      // Save to database immediately
+      try {
+        const updatedEdges = [...edges, newEdge];
+        await fetch('/api/workflows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workflowId,
+            nodes: nodes.map((n) => ({
+              id: n.id,
+              type: n.type,
+              position: n.position,
+              data: n.data,
+            })),
+            edges: updatedEdges.map((e) => ({
+              id: e.id,
+              source: e.source,
+              target: e.target,
+              sourceHandle: e.sourceHandle,
+              targetHandle: e.targetHandle,
+            })),
+          }),
+        });
+        console.log('[WorkflowCanvas] Edge saved to database');
+      } catch (error) {
+        console.error('[WorkflowCanvas] Failed to save edge:', error);
+      }
     },
-    [isAllowedConnection, nodes, setEdges]
+    [isAllowedConnection, nodes, edges, setEdges, workflowId]
   );
 
   const onNodesChange = useCallback(
-    (changes: Parameters<typeof onNodesChangeInternal>[0]) => {
+    async (changes: Parameters<typeof onNodesChangeInternal>[0]) => {
       onNodesChangeInternal(changes);
+      
+      // Save to database after node changes (like position updates)
+      // Debounce to avoid too many saves
+      setTimeout(async () => {
+        try {
+          await fetch('/api/workflows', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              workflowId,
+              nodes: nodes.map((n) => ({
+                id: n.id,
+                type: n.type,
+                position: n.position,
+                data: n.data,
+              })),
+              edges: edges.map((e) => ({
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                sourceHandle: e.sourceHandle,
+                targetHandle: e.targetHandle,
+              })),
+            }),
+          });
+          console.log('[WorkflowCanvas] Nodes saved to database after change');
+        } catch (error) {
+          console.error('[WorkflowCanvas] Failed to save nodes:', error);
+        }
+      }, 1000); // 1 second debounce
     },
-    [onNodesChangeInternal]
+    [onNodesChangeInternal, workflowId, nodes, edges]
   );
 
   const onEdgesChange = useCallback(
-    (changes: Parameters<typeof onEdgesChangeInternal>[0]) => {
+    async (changes: Parameters<typeof onEdgesChangeInternal>[0]) => {
       onEdgesChangeInternal(changes);
+      
+      // Save to database after edge changes (like deletions)
+      setTimeout(async () => {
+        try {
+          await fetch('/api/workflows', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              workflowId,
+              nodes: nodes.map((n) => ({
+                id: n.id,
+                type: n.type,
+                position: n.position,
+                data: n.data,
+              })),
+              edges: edges.map((e) => ({
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                sourceHandle: e.sourceHandle,
+                targetHandle: e.targetHandle,
+              })),
+            }),
+          });
+          console.log('[WorkflowCanvas] Edges saved to database after change');
+        } catch (error) {
+          console.error('[WorkflowCanvas] Failed to save edges:', error);
+        }
+      }, 500); // Debounce to avoid too many saves
     },
-    [onEdgesChangeInternal]
+    [onEdgesChangeInternal, workflowId, nodes, edges]
   );
 
   const addableNodes: AddableNode[] = useMemo(() => availableModules, [availableModules]);

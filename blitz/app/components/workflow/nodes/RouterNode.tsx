@@ -48,8 +48,8 @@ export function RouterNode(props: NodeProps) {
           return (
             <div key={intent} className="flex items-center justify-between rounded bg-white px-2 py-1 text-xs text-slate-700">
               <span>{intent.replace('_', ' ')}</span>
-              <span className={isMapped ? 'text-emerald-600' : 'text-amber-500'}>
-                {isMapped ? 'Linked' : 'Unlinked'}
+              <span className={isMapped ? 'text-emerald-600' : 'text-emerald-500'}>
+                {isMapped ? 'Linked' : 'linked'}
               </span>
             </div>
           );

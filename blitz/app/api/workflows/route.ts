@@ -72,6 +72,15 @@ export async function POST(request: Request) {
     const nodes = payload.nodes as WorkflowNode[];
     const edges = payload.edges as WorkflowEdge[];
 
+    // Log what we're saving
+    console.log('[POST /api/workflows] Saving workflow:', {
+      workflowId: payload.workflowId,
+      nodesCount: nodes.length,
+      edgesCount: edges.length,
+      nodes: nodes.map(n => ({ id: n.id, type: n.type })),
+      edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target })),
+    });
+
     // Save workflow (only basic node info, no configs)
     const workflow = await saveWorkflow({
       workflowId: payload.workflowId,
@@ -80,6 +89,12 @@ export async function POST(request: Request) {
       description: payload.description,
       nodes,
       edges,
+    });
+
+    console.log('[POST /api/workflows] Workflow saved successfully:', {
+      workflowId: workflow.id,
+      savedNodesCount: (workflow.react_flow_state as any)?.nodes?.length || 0,
+      savedEdgesCount: (workflow.react_flow_state as any)?.edges?.length || 0,
     });
 
     return NextResponse.json({ workflow }, { status: 200 });
