@@ -1,0 +1,68 @@
+{
+  "documents": [
+    {
+      "content": "About Us: [Your company description, mission, values, history]",
+      "metadata": {
+        "category": "company-info",
+        "source": "about-us",
+        "title": "About Our Company"
+      }
+    },
+    {
+      "content": "Cancellation Policy: [Your cancellation terms, timeframes, refund process]",
+      "metadata": {
+        "category": "cancellation-policy",
+        "source": "policies",
+        "title": "Cancellation Policy"
+      }
+    },
+    {
+      "content": "Shipping Policy: [Shipping methods, costs, delivery times, regions]",
+      "metadata": {
+        "category": "shipping-policy",
+        "source": "policies",
+        "title": "Shipping Information"
+      }
+    },
+    {
+      "content": "Return Policy: [Return conditions, timeframes, process, exceptions]",
+      "metadata": {
+        "category": "return-policy",
+        "source": "policies",
+        "title": "Return Policy"
+      }
+    },
+    {
+      "content": "Tracking Information: [How to track orders, where to find tracking numbers, estimated times]",
+      "metadata": {
+        "category": "tracking-info",
+        "source": "policies",
+        "title": "Order Tracking"
+      }
+    },
+    {
+      "content": "Payment Methods: [Accepted payment methods, security, billing information]",
+      "metadata": {
+        "category": "payment-info",
+        "source": "policies",
+        "title": "Payment Information"
+      }
+    },
+    {
+      "content": "Customer Support: [Support hours, contact methods, response times]",
+      "metadata": {
+        "category": "support-info",
+        "source": "policies",
+        "title": "Customer Support"
+      }
+    },
+    {
+      "content": "Privacy Policy: [Data collection, usage, protection, user rights]",
+      "metadata": {
+        "category": "privacy-policy",
+        "source": "legal",
+        "title": "Privacy Policy"
+      }
+    }
+  ]
+}
